@@ -1,0 +1,71 @@
+Jednostronicowa notatka — wybrane wzorce dla projektu Rozproszone łamanie hashy
+
+Kontekst (1 zdanie): rozproszona aplikacja P2P w sieci Wi‑Fi, zadania dzielone na paczki wysyłane po UDP; biblioteka permutacji w Pythonie (generator kandydatów), obliczanie hashy delegowane do zewnętrznej biblioteki.
+
+
+---
+
+Wybrane wzorce (krótkie i praktyczne)
+
+1. Command — jednostka pracy (task/paczka)
+
+Rola: każda paczka zadań jest obiektem Command (np. CrackHashCommand) zawierającym: job_id, task_id, generator_id/parametry, start_index, end_index, lease.
+Dlaczego: paczka musi być samowystarczalna, serializowalna (DTO/JSON) i możliwa do ponownego wykonania na dowolnym nodzie. Command.execute() generuje kandydatów i porównuje hashe (delegacja do hashlib).
+Przykładowe pola:
+CrackHashCommand(job_id, task_id, generator_params, start, end, lease_seconds)
+Korzyści: prosty mechanizm przydziału/ack/retry, łatwe logowanie i testowanie.
+
+
+---
+
+2. Observer — rozproszony mechanizm powiadomień / gossip
+
+Rola: event-driven: nody nasłuchują i publikują zdarzenia po UDP (DISCOVER, ASSIGN_TASK, TASK_PROGRESS, TASK_RESULT:FOUND, HEARTBEAT).
+Dlaczego: brak centralnego serwera → potrzeba lekkiego, asynchronicznego powiadamiania wszystkich węzłów o wynikach i stanie zadań; Observer naturalnie pasuje do broadcast/UDP.
+Przykładowe eventy: FOUND → wszyscy przerywają powiązane zadania; LEASE_EXPIRED rekonfiguruje przydziały.
+Korzyści: replikacja stanu (gossip), brak single point of failure, prostota implementacji.
+
+
+---
+
+3. Strategy — elastyczne generatory kandydatów / przydział paczek
+
+Rola: różne implementacje generatorów kandydatów i strategii przydziału: BruteForceGenerator, DictionaryGenerator, MaskGenerator; oraz FixedChunkStrategy, AdaptiveChunkStrategy dla rozdziału pracy.
+Dlaczego: nawet jeśli hashing robi biblioteka, sposób generowania kandydatów i dzielenia przestrzeni to kluczowa część biblioteki permutacji; Strategy ułatwia dodawanie trybów bez zmiany logiki sieciowej.
+Korzyści: wymienialność algorytmów, testowalność, łatwa konfiguracja jobów.
+
+
+---
+
+Jak to współpracuje (przepływ, 3 zdania)
+
+1. Job tworzy listę Command (zakresy indeksów) i rozgłasza je (Observer: ASSIGN_TASK).
+
+
+2. Node otrzymuje Command, instaluje odpowiedni CandidateGenerator (Strategy) i wywołuje Command.execute() → generuje kandydatów i porównuje hash.
+
+
+3. Wynik (TASK_RESULT) jest broadcastowany (Observer); FOUND kończy pracę pozostałych nodów, wygaśnięcie lease powoduje ponowne przydzielenie zadania.
+
+
+
+
+---
+
+Dodatkowe praktyczne decyzje (1‑linijki)
+
+Paczka = zakres indeksów (deterministyczne index → candidate) → idempotentne, łatwe do dzielenia.
+
+Lease + timeout + periodic gossip → radzenie sobie z odłączającymi się nodami.
+
+DTO (JSON) dla komunikatów UDP → prostota debugowania i logów.
+
+Logger/NetworkManager może być implementacyjnie jako Singleton (detal implementacyjny, nie główny wzorzec architektoniczny).
+
+
+
+---
+
+Krótkie uzasadnienie wyboru (1 zdanie)
+
+Wybrałem Command, Observer i Strategy, bo razem dają prosty, odporny i elastyczny model rozproszonego przydziału i wykonania zadań: Command modeluje paczki, Observer zapewnia rozproszone powiadamianie bez serwera, a Strategy daje bibliotekę permutacji, którą łatwo rozszerzać i testować.
