@@ -1,71 +1,97 @@
-Jednostronicowa notatka — wybrane wzorce dla projektu Rozproszone łamanie hashy
+---
+Jednostronicowa notatka – wybrane wzorce dla biblioteki permutacji
 
-Kontekst (1 zdanie): rozproszona aplikacja P2P w sieci Wi‑Fi, zadania dzielone na paczki wysyłane po UDP; biblioteka permutacji w Pythonie (generator kandydatów), obliczanie hashy delegowane do zewnętrznej biblioteki.
+Kontekst: biblioteka Pythona do generowania permutacji, dzielenia przestrzeni zadań i konfiguracji generatorów; aplikacja demonstracyjna (np. łamanie hashy) korzysta z biblioteki, ale sama logika rozproszona jest opcjonalna.
 
 
 ---
 
-Wybrane wzorce (krótkie i praktyczne)
+Wybrane wzorce
 
-1. Command — jednostka pracy (task/paczka)
+1. Strategy – elastyczne algorytmy generowania permutacji i podziału przestrzeni
 
-Rola: każda paczka zadań jest obiektem Command (np. CrackHashCommand) zawierającym: job_id, task_id, generator_id/parametry, start_index, end_index, lease.
-Dlaczego: paczka musi być samowystarczalna, serializowalna (DTO/JSON) i możliwa do ponownego wykonania na dowolnym nodzie. Command.execute() generuje kandydatów i porównuje hashe (delegacja do hashlib).
-Przykładowe pola:
-CrackHashCommand(job_id, task_id, generator_params, start, end, lease_seconds)
-Korzyści: prosty mechanizm przydziału/ack/retry, łatwe logowanie i testowanie.
+Rola: definiuje różne sposoby generowania kandydatów: BruteForceStrategy, DictionaryStrategy, MaskStrategy; oraz strategie przydziału podprzestrzeni (FixedChunk, AdaptiveChunk).
 
+Dlaczego: pozwala wymieniać algorytmy w czasie działania, testować i rozszerzać bibliotekę bez zmian w kodzie aplikacji.
 
----
-
-2. Observer — rozproszony mechanizm powiadomień / gossip
-
-Rola: event-driven: nody nasłuchują i publikują zdarzenia po UDP (DISCOVER, ASSIGN_TASK, TASK_PROGRESS, TASK_RESULT:FOUND, HEARTBEAT).
-Dlaczego: brak centralnego serwera → potrzeba lekkiego, asynchronicznego powiadamiania wszystkich węzłów o wynikach i stanie zadań; Observer naturalnie pasuje do broadcast/UDP.
-Przykładowe eventy: FOUND → wszyscy przerywają powiązane zadania; LEASE_EXPIRED rekonfiguruje przydziały.
-Korzyści: replikacja stanu (gossip), brak single point of failure, prostota implementacji.
-
-
----
-
-3. Strategy — elastyczne generatory kandydatów / przydział paczek
-
-Rola: różne implementacje generatorów kandydatów i strategii przydziału: BruteForceGenerator, DictionaryGenerator, MaskGenerator; oraz FixedChunkStrategy, AdaptiveChunkStrategy dla rozdziału pracy.
-Dlaczego: nawet jeśli hashing robi biblioteka, sposób generowania kandydatów i dzielenia przestrzeni to kluczowa część biblioteki permutacji; Strategy ułatwia dodawanie trybów bez zmiany logiki sieciowej.
-Korzyści: wymienialność algorytmów, testowalność, łatwa konfiguracja jobów.
-
-
----
-
-Jak to współpracuje (przepływ, 3 zdania)
-
-1. Job tworzy listę Command (zakresy indeksów) i rozgłasza je (Observer: ASSIGN_TASK).
-
-
-2. Node otrzymuje Command, instaluje odpowiedni CandidateGenerator (Strategy) i wywołuje Command.execute() → generuje kandydatów i porównuje hash.
-
-
-3. Wynik (TASK_RESULT) jest broadcastowany (Observer); FOUND kończy pracę pozostałych nodów, wygaśnięcie lease powoduje ponowne przydzielenie zadania.
-
+Korzyść: elastyczność i skalowalność.
 
 
 
 ---
 
-Dodatkowe praktyczne decyzje (1‑linijki)
+2. Iterator – leniwe przeglądanie permutacji
 
-Paczka = zakres indeksów (deterministyczne index → candidate) → idempotentne, łatwe do dzielenia.
+Rola: umożliwia generowanie kandydatów jeden po drugim bez tworzenia całej przestrzeni w pamięci.
 
-Lease + timeout + periodic gossip → radzenie sobie z odłączającymi się nodami.
+Dlaczego: przestrzeń permutacji jest ogromna (np. 62^7 kombinacji), więc leniwy iterator jest konieczny dla efektywności.
 
-DTO (JSON) dla komunikatów UDP → prostota debugowania i logów.
-
-Logger/NetworkManager może być implementacyjnie jako Singleton (detal implementacyjny, nie główny wzorzec architektoniczny).
+Korzyść: oszczędność pamięci, możliwość przetwarzania strumieniowego i dzielenia przestrzeni na paczki.
 
 
 
 ---
 
-Krótkie uzasadnienie wyboru (1 zdanie)
+3. Builder – konfiguracja generatorów permutacji
 
-Wybrałem Command, Observer i Strategy, bo razem dają prosty, odporny i elastyczny model rozproszonego przydziału i wykonania zadań: Command modeluje paczki, Observer zapewnia rozproszone powiadamianie bez serwera, a Strategy daje bibliotekę permutacji, którą łatwo rozszerzać i testować.
+Rola: pozwala krok po kroku ustawić parametry generatora (alfabet, długość, maski, tryb strategii).
+
+Dlaczego: generator może mieć wiele parametrów, więc Builder ułatwia czytelne i skalowalne tworzenie obiektów.
+
+Korzyść: przejrzyste API, łatwa rozszerzalność, minimalizuje liczbę konstruktorów.
+
+
+
+---
+
+4. Abstract Factory – tworzenie rodzin generatorów
+
+Rola: dostarcza interfejs do tworzenia powiązanych generatorów i strategii bez ujawniania szczegółów implementacji.
+
+Dlaczego: jeśli potrzebujemy różnych rodzin generatorów (np. do permutacji znaków, liczb, maski), Abstract Factory pozwala łatwo je wymieniać w projekcie.
+
+Korzyść: spójność konfiguracji, łatwe rozszerzanie i integracja z różnymi typami generatorów.
+
+
+
+---
+
+Dlaczego te, a nie inne wzorce
+
+Wybrane: Strategy, Iterator, Builder, Abstract Factory
+
+Pasują do biblioteki, bo zapewniają elastyczność, skalowalność i testowalność w samym silniku permutacji i podziału przestrzeni zadań.
+
+
+Odrzucone:
+
+Command i Observer – służą głównie aplikacji rozproszonej, nie samej bibliotece.
+
+Singleton – ewentualny detal implementacyjny (logger/manager), nie kluczowa architektura.
+
+Template Method, Visitor, Adapter – mniej naturalne w kontekście generowania permutacji i konfiguracji generatorów.
+
+Repository, Data Mapper, Active Record – dotyczą trwałych danych i DB; tutaj operujemy na pamięci i strukturach czasowych.
+
+
+
+---
+
+Podsumowanie przepływu w bibliotece
+
+1. Builder/Abstract Factory tworzy odpowiedni generator permutacji z parametrami.
+
+
+2. Strategy wybiera algorytm generowania kandydatów i ewentualnie sposób dzielenia przestrzeni.
+
+
+3. Iterator umożliwia leniwe przeglądanie kolejnych kandydatów, wspierając dzielenie zadań i skalowalność.
+
+
+
+Efekt: elastyczna, ogólna i łatwa do rozszerzenia biblioteka permutacji, którą aplikacja demonstracyjna może wykorzystać do różnych celów (np. łamania hashy).
+
+
+---
+
+Przygotować diagram klas + krótki schemat przepływu dla tych wzorców, żeby była gotowa do prezentacji na slajdzie.
