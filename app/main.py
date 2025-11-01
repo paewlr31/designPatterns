@@ -13,7 +13,7 @@ def generate_random_password(length: int = 4) -> str:
 
 def crack_password_in_chunks(target_password: str):
     factory = BruteForceFactory()
-    builder = factory.create_builder()
+    builder: PasswordGeneratorBuilder = factory.create_builder()
     total_space = builder.build_full_space_size()
     print(f"[INFO] Przestrzeń haseł: 62^4 = {total_space:,} możliwości")
     print(f"[INFO] Szukam hasła: {target_password}")
@@ -37,7 +37,8 @@ def crack_password_in_chunks(target_password: str):
                 elapsed = time.time() - chunk_start_time
                 total_elapsed = time.time() - global_start_time
                 print(f"\nHASŁO ZNALEZIONE! '{candidate}'")
-                print(f"    → w paczce {chunk_id+1}, po {attempts} próbach w tej paczce")
+                print(f"    → w paczce {chunk_id+1}, po {attempts:,} próbach w tej paczce")
+                print(f"    → Łącznie po {(chunk_id+1)*1000000+attempts:,} próbach ")
                 print(f"    → łączny czas: {total_elapsed:.2f}s")
                 return
 
