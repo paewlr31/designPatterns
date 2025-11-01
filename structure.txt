@@ -1,0 +1,15 @@
+password_cracker/
+│
+├── library/                  # <-- BIBLIOTEKA / FRAMEWORK
+│   ├── __init__.py
+│   ├── alphabet.py
+│   ├── strategies.py
+│   ├── generator.py
+│   ├── builder.py
+│   ├── factory.py
+│
+├── app/                      # <-- APLIKACJA TESTOWA
+│   ├── __init__.py
+│   ├── main.py
+│
+└── tests/                    # (opcjonalne, pomijamy na razie)
