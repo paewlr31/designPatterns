@@ -23,7 +23,7 @@ Projekt składa się z ogólnej biblioteki do permutacji oraz aplikacji rozprosz
 
 * Biblioteka ogólna do permutacji, a w apce do łamania hasha.
 * Logi do weryfikacji czy to poprawnie działa.
-* Odpalamy na dowolnym bez IP. Sieć lokalna wifi.
+* Odpalamy na dowolnym komputerze - nie hardkodujemy IP (ale ma sie okazywac IP komputera ktory dołaczył). Sieć lokalna wifi.
 
 ## Paczki i stan zadań
 
