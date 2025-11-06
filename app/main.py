@@ -16,7 +16,7 @@ from library.factory import GeneratorFactory
 from library.alphabet import ASCII_LETTERS_DIGITS
 
 # ---------- konfiguracja ----------
-TARGET_HASH = hashlib.sha1(b"QwE9").hexdigest()
+TARGET_HASH = hashlib.sha1(b"QT98iE9").hexdigest()
 PASSWORD_LENGTH = 4
 MULTICAST_GROUP = "224.0.0.251"
 MULTICAST_PORT = 50001
