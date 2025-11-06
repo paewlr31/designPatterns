@@ -1,24 +1,42 @@
-# library/factory.py
-from abc import ABC, abstractmethod
-from .builder import PasswordGeneratorBuilder
-from .strategies import BruteForceStrategy, DictionaryStrategy
+"""
+factory.py
+----------
+Abstract Factory – dostarcza gotowe rodziny generatorów
+(BruteForce, Dictionary, Mask) z domyślnymi ustawieniami.
+"""
 
-class GeneratorFactory(ABC):
-    @abstractmethod
-    def create_builder(self) -> PasswordGeneratorBuilder:
-        ...
+from __future__ import annotations
+from .builder import GeneratorBuilder
+from .generator import PermutationGenerator
+from typing import List
 
-class BruteForceFactory(GeneratorFactory):
-    def create_builder(self) -> PasswordGeneratorBuilder:
-        return (PasswordGeneratorBuilder()
-                .with_bruteforce()
-                .with_adaptive_chunks())
 
-class DictionaryFactory(GeneratorFactory):
-    def __init__(self, wordlist: list):
-        self.wordlist = wordlist
+class GeneratorFactory:
+    """Statyczna fabryka – wygodne „jednolinijkowe” tworzenie generatorów."""
 
-    def create_builder(self) -> PasswordGeneratorBuilder:
-        return (PasswordGeneratorBuilder()
-                .with_dictionary(self.wordlist)
-                .with_fixed_chunks(chunk_size=1000))
+    @staticmethod
+    def brute_force(charset: str, length: int, chunk_size: int = 1_000_000) -> PermutationGenerator:
+        return (
+            GeneratorBuilder()
+            .with_brute_force(charset, length)
+            .with_fixed_chunk(chunk_size)
+            .build()
+        )
+
+    @staticmethod
+    def dictionary(words: List[str], chunk_size: int = 1_000_000) -> PermutationGenerator:
+        return (
+            GeneratorBuilder()
+            .with_dictionary(words)
+            .with_fixed_chunk(chunk_size)
+            .build()
+        )
+
+    @staticmethod
+    def mask(mask: str, chunk_size: int = 1_000_000) -> PermutationGenerator:
+        return (
+            GeneratorBuilder()
+            .with_mask(mask)
+            .with_fixed_chunk(chunk_size)
+            .build()
+        )
