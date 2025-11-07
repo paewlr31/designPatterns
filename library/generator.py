@@ -1,85 +1,45 @@
-"""
-generator.py
-------------
-Klasa PermutationGenerator – iterator leniwe generujący kandydatów
-z wybraną strategią generowania i opcjonalnym podziałem przestrzeni.
-"""
-
 from __future__ import annotations
 from typing import Iterator, Optional
-from .strategies import GenerationStrategy, ChunkStrategy, FixedChunkStrategy
+from .strategies import GenerationStrategy, BruteForceStrategy
+from .alphabet import Alphabet
 
 
-class PermutationGenerator:
-    """
-    Leniwy iterator po kandydatach.
-    Umożliwia podział pracy na wiele workerów (chunk strategy).
-    """
-
-    def __init__(
-        self,
-        strategy: GenerationStrategy,
-        total: Optional[int] = None,
-        chunk_strategy: Optional[ChunkStrategy] = None,
-    ):
+class PermutationIterator:
+    """Leniwy iterator po hasłach z danej strategii."""
+    
+    def __init__(self, strategy: GenerationStrategy, start_idx: int, batch_size: int = 1000000):
         self.strategy = strategy
-        self.total = total or self._estimate_total()
-        self.chunk_strategy = chunk_strategy or FixedChunkStrategy(1_000_000)
-
-        self._current_start = 0
-        self._current_count = 0
-        self._exhausted = False
-
-    # ------------------------------------------------------------------
-    #  Pomocnicze
-    # ------------------------------------------------------------------
-    def _estimate_total(self) -> int:
-        """Próba oszacowania rozmiaru przestrzeni (jeśli nie podano)."""
-        # Dla BruteForceStrategy możemy obliczyć dokładnie
-        if hasattr(self.strategy, "base") and hasattr(self.strategy, "length"):
-            return self.strategy.base ** self.strategy.length
-        return 0  # nieznane – będziemy iterować do wyczerpania
-
-    # ------------------------------------------------------------------
-    #  API publiczne
-    # ------------------------------------------------------------------
-    def next_chunk(self, worker_id: int, workers: int) -> Iterator[str]:
-        """
-        Zwraca iterator po kolejnej paczce dla danego workera.
-        Po wyczerpaniu przestrzeni zwraca pusty iterator.
-        """
-        if self._exhausted:
-            return iter(())
-
-        chunks = self.chunk_strategy.split(self.total, workers)
-        if worker_id >= len(chunks):
-            self._exhausted = True
-            return iter(())
-
-        start, count = chunks[worker_id]
-        # przesunięcie względem już przetworzonych chunków
-        start += self._current_start
-
-        if start >= self.total:
-            self._exhausted = True
-            return iter(())
-
-        count = min(count, self.total - start)
-        self._current_start += count
-        if self._current_start >= self.total:
-            self._exhausted = True
-
-        return self.strategy.candidates(start, count)
+        self.start_idx = start_idx
+        self.batch_size = batch_size
+        self.current = start_idx
 
     def __iter__(self) -> Iterator[str]:
-        """Cała przestrzeń jako jeden iterator (bez podziału)."""
-        return self.strategy.candidates(0, self.total)
-
-    # ------------------------------------------------------------------
-    #  Kontekst manager – przydatne przy pracy w pętli
-    # ------------------------------------------------------------------
-    def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
+    def __next__(self) -> str:
+        if self.current >= self.strategy.total_combinations(0, 999):  # dummy, realnie w strategii
+            raise StopIteration
+        pwd = next(self.strategy.generate(self.current, 1))
+        self.current += 1
+        return pwd
+
+    def skip_to(self, idx: int):
+        """Przeskocz do konkretnego indeksu."""
+        self.current = idx
+
+    def get_batch(self, size: int) -> Iterator[str]:
+        """Pobierz paczkę haseł."""
+        return self.strategy.generate(self.current, size)
+
+
+class PasswordGenerator:
+    """Główny generator haseł oparty na strategii."""
+    
+    def __init__(self, strategy: GenerationStrategy):
+        self.strategy = strategy
+
+    def iterator(self, start_idx: int = 0, batch_size: int = 1000000) -> PermutationIterator:
+        return PermutationIterator(self.strategy, start_idx, batch_size)
+
+    def total_combinations(self) -> int:
+        return self.strategy.total_combinations(0, 999)  # dummy — realnie w strategii

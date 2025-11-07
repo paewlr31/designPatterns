@@ -1,42 +1,26 @@
-"""
-factory.py
-----------
-Abstract Factory – dostarcza gotowe rodziny generatorów
-(BruteForce, Dictionary, Mask) z domyślnymi ustawieniami.
-"""
-
 from __future__ import annotations
 from .builder import GeneratorBuilder
-from .generator import PermutationGenerator
-from typing import List
+from .generator import PasswordGenerator
+from .alphabet import Alphabet
 
 
 class GeneratorFactory:
-    """Statyczna fabryka – wygodne „jednolinijkowe” tworzenie generatorów."""
-
+    """Abstract Factory – tworzy gotowe generatory dla typowych scenariuszy."""
+    
     @staticmethod
-    def brute_force(charset: str, length: int, chunk_size: int = 1_000_000) -> PermutationGenerator:
+    def default_bruteforce(min_len: int = 4, max_len: int = 7) -> PasswordGenerator:
         return (
             GeneratorBuilder()
-            .with_brute_force(charset, length)
-            .with_fixed_chunk(chunk_size)
+            .with_default_alphabet()
+            .with_length_range(min_len, max_len)
             .build()
         )
 
     @staticmethod
-    def dictionary(words: List[str], chunk_size: int = 1_000_000) -> PermutationGenerator:
+    def custom_alphabet(charset: str, min_len: int = 4, max_len: int = 7) -> PasswordGenerator:
         return (
             GeneratorBuilder()
-            .with_dictionary(words)
-            .with_fixed_chunk(chunk_size)
-            .build()
-        )
-
-    @staticmethod
-    def mask(mask: str, chunk_size: int = 1_000_000) -> PermutationGenerator:
-        return (
-            GeneratorBuilder()
-            .with_mask(mask)
-            .with_fixed_chunk(chunk_size)
+            .with_alphabet(charset)
+            .with_length_range(min_len, max_len)
             .build()
         )
