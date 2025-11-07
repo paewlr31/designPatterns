@@ -1,11 +1,12 @@
 from __future__ import annotations
-from typing import Protocol, Iterator, Tuple, List
+from typing import Iterator, Protocol
 from .alphabet import Alphabet
+from .generator import CoreBruteGenerator
 
 
 class GenerationStrategy(Protocol):
     """Protokół strategii generowania haseł."""
-    
+
     def generate(self, start_idx: int, count: int) -> Iterator[str]:
         """Generuje count haseł zaczynając od globalnego indeksu start_idx."""
         ...
@@ -16,33 +17,17 @@ class GenerationStrategy(Protocol):
 
 
 class BruteForceStrategy:
-    """Pełne przeszukiwanie dla stałych długości."""
-    
+    """
+    Adapter-strategia, która deleguje pracę do CoreBruteGenerator.
+    Zostało tak napisane, żeby kod, który importuje 'BruteForceStrategy'
+    dalej działał — ale ciężka praca wykonuje się w CoreBruteGenerator.
+    """
+
     def __init__(self, alphabet: Alphabet, min_length: int, max_length: int):
-        self.alphabet = alphabet
-        self.min_length = min_length
-        self.max_length = max_length
-        self._lengths = list(range(min_length, max_length + 1))
-        self._counts = [alphabet.base ** L for L in self._lengths]
-        self._total = sum(self._counts)
+        self._core = CoreBruteGenerator(alphabet, min_length, max_length)
 
-    def total_combinations(self, min_len: int, max_len: int) -> int:
-        return self._total
-
-    def _idx_to_password(self, idx: int) -> str:
-        offset = idx
-        for L, cnt in zip(self._lengths, self._counts):
-            if offset < cnt:
-                x = offset
-                pwd = []
-                for _ in range(L):
-                    pwd.append(self.alphabet[x % self.alphabet.base])
-                    x //= self.alphabet.base
-                return "".join(reversed(pwd))
-            offset -= cnt
-        raise IndexError("Indeks poza zakresem")
+    def total_combinations(self, min_len: int = None, max_len: int = None) -> int:
+        return self._core.total_combinations(min_len, max_len)
 
     def generate(self, start_idx: int, count: int) -> Iterator[str]:
-        end_idx = start_idx + count
-        for idx in range(start_idx, min(end_idx, self._total)):
-            yield self._idx_to_password(idx)
+        return self._core.generate(start_idx, count)
