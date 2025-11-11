@@ -14,10 +14,16 @@ sys.path.append(str(Path(__file__).parent.parent))
 from library.factory import GeneratorFactory
 from library.generator import PermutationIterator
 
+from dotenv import load_dotenv
+import os
 
-# === USTAWIENIA ===
-MULTICAST_GROUP = "224.0.0.251"
-MULTICAST_PORT = 50001
+# === KONFIGURACJA Z .env ===
+load_dotenv()
+
+KNOWN_PEERS = os.getenv("KNOWN_PEERS", "")
+KNOWN_PEERS = [ip.strip() for ip in KNOWN_PEERS.split(",") if ip.strip()]
+
+BROADCAST_PORT = 50001
 TASK_PORT = 50002
 PING_INTERVAL = 3
 SYNC_INTERVAL = 8
@@ -27,11 +33,23 @@ SYNC_WAIT_TIMEOUT = 12
 
 
 # === POMOCNICZE ===
-def get_local_ip():
+def get_hamachi_ip():
+    """Pobiera IP Hamachi (25.x.x.x)"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
+        # Łączymy się z zewnętrznym IP aby uzyskać lokalny IP
         s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
+        local_ip = s.getsockname()[0]
+        # Sprawdź czy to IP Hamachi
+        if local_ip.startswith("25."):
+            return local_ip
+        # Jeśli nie, spróbuj znaleźć interfejs Hamachi
+        import socket as sock
+        hostname = sock.gethostname()
+        for ip in sock.gethostbyname_ex(hostname)[2]:
+            if ip.startswith("25."):
+                return ip
+        return local_ip
     except:
         return "127.0.0.1"
     finally:
@@ -48,7 +66,7 @@ def valid_password(pwd: str):
 
 class DistributedBruteForcer:
     def __init__(self, provided_password=None):
-        self.ip = get_local_ip()
+        self.ip = get_hamachi_ip()
         self.peers = {}
         self.done_batches = set()
         self.assigned_batches = {}
@@ -69,18 +87,21 @@ class DistributedBruteForcer:
             self.proposed_password = provided_password
             self.proposed_hash = hashlib.sha1(provided_password.encode()).hexdigest()
 
-        print(f"[START] Node {self.ip}")
+        print(f"[START] Node {self.ip} (Hamachi)")
+
+        # Dodaj znane peery
+        for peer in KNOWN_PEERS:
+            if peer != self.ip:
+                self.peers[peer] = 0
 
         # === SIEĆ ===
-        self.mcast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        self.mcast_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.bcast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.bcast_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.mcast_sock.bind(("", MULTICAST_PORT))
+            self.bcast_sock.bind(("", BROADCAST_PORT))
         except Exception as e:
-            print(f"[FATAL] Bind multicast: {e}")
+            print(f"[FATAL] Bind broadcast: {e}")
             sys.exit(1)
-        mreq = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton("0.0.0.0")
-        self.mcast_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
         self.task_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -94,7 +115,7 @@ class DistributedBruteForcer:
         self.strategy = self.generator.strategy
 
         # === WĄTKI ===
-        threading.Thread(target=self._multicast_listener, daemon=True).start()
+        threading.Thread(target=self._broadcast_listener, daemon=True).start()
         threading.Thread(target=self._task_listener, daemon=True).start()
         threading.Thread(target=self._send_ping, daemon=True).start()
         threading.Thread(target=self._send_sync_periodic, daemon=True).start()
@@ -161,17 +182,18 @@ class DistributedBruteForcer:
                 return pwd
             print(f"[BŁĄD] {msg}")
 
-    def _multicast_listener(self):
+    def _broadcast_listener(self):
         while not self.global_stop:
             try:
-                data, addr = self.mcast_sock.recvfrom(4096)
+                data, addr = self.bcast_sock.recvfrom(4096)
                 msg, ip = data.decode(), addr[0]
-                if ip == self.ip: continue
+                if ip == self.ip:
+                    continue
 
                 with self.lock:
-                    self.peers[ip] = time.time()
                     if ip not in self.peers:
                         print(f"[DISCOVER] {ip}")
+                    self.peers[ip] = time.time()
 
                 if msg.startswith("PING:"):
                     pass
@@ -195,12 +217,10 @@ class DistributedBruteForcer:
                 continue
 
     def _send_ping(self):
+        """Wysyła PING do wszystkich znanych peerów"""
         msg = f"PING:{self.ip}".encode()
         while not self.global_stop:
-            try:
-                self.mcast_sock.sendto(msg, (MULTICAST_GROUP, MULTICAST_PORT))
-            except:
-                pass
+            self._broadcast_to_peers(msg, BROADCAST_PORT)
             time.sleep(PING_INTERVAL)
 
     def _send_sync_periodic(self):
@@ -214,24 +234,34 @@ class DistributedBruteForcer:
         with self.lock:
             csv = ",".join(map(str, sorted(self.done_batches)))
         msg = f"SYNC:{csv}".encode()
-        try:
-            self.mcast_sock.sendto(msg, (MULTICAST_GROUP, MULTICAST_PORT))
-        except:
-            pass
+        self._broadcast_to_peers(msg, BROADCAST_PORT)
 
     def _broadcast_hash_set(self, h):
         msg = f"HASH_SET:{h}".encode()
-        try:
-            self.mcast_sock.sendto(msg, (MULTICAST_GROUP, MULTICAST_PORT))
-            print("[HASH] Rozgłoszono hash.")
-        except:
-            pass
+        self._broadcast_to_peers(msg, BROADCAST_PORT)
+        print("[HASH] Rozgłoszono hash.")
+
+    def _broadcast_to_peers(self, msg, port):
+        """Wysyła wiadomość do wszystkich znanych peerów"""
+        with self.lock:
+            peer_list = list(self.peers.keys())
+        
+        for ip in peer_list:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.settimeout(0.2)
+                s.sendto(msg, (ip, port))
+                s.close()
+            except:
+                pass
 
     def _send_sync_request(self):
+        """Prosi wszystkie peery o synchronizację"""
         msg = b"SYNC_REQ:"
         for ip in list(self.peers):
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.settimeout(0.5)
                 s.sendto(msg, (ip, TASK_PORT))
                 s.close()
             except:
@@ -242,9 +272,12 @@ class DistributedBruteForcer:
             try:
                 data, addr = self.task_sock.recvfrom(4096)
                 msg, ip = data.decode(), addr[0]
-                if ip == self.ip: continue
+                if ip == self.ip:
+                    continue
 
                 with self.lock:
+                    if ip not in self.peers:
+                        print(f"[DISCOVER] node z TASK: {ip}")
                     self.peers[ip] = time.time()
 
                 if msg.startswith("TASK_START:"):
@@ -271,6 +304,7 @@ class DistributedBruteForcer:
                 continue
 
     def _send_to_all(self, msg):
+        """Wysyła wiadomość do wszystkich peerów"""
         for ip in list(self.peers):
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -292,7 +326,8 @@ class DistributedBruteForcer:
         print("[WORK] Czekam na hash...")
         while not self.global_stop and not self.hash_ready.is_set():
             time.sleep(0.5)
-        if self.global_stop: return
+        if self.global_stop:
+            return
         print("[WORK] Start!")
 
         while not self.global_stop:
@@ -336,7 +371,7 @@ class DistributedBruteForcer:
             time.sleep(5)
             now = time.time()
             with self.lock:
-                dead = [ip for ip, t in self.peers.items() if now - t > TASK_TIMEOUT]
+                dead = [ip for ip, t in self.peers.items() if t > 0 and now - t > TASK_TIMEOUT]
                 for ip in dead:
                     del self.peers[ip]
                     self.assigned_batches.pop(ip, None)

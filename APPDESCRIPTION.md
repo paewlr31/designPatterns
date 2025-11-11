@@ -23,7 +23,7 @@
 
 ## **3. Przepływ sterowania – krok po kroku**
 
-### **Krok 1: Uruchomienie aplikacji (`main.py`)**
+### **Krok 1: Uruchomienie aplikacji (linie 113,114) (`main.py`)**
 ```python
 self.generator = GeneratorFactory.default_bruteforce(min_len=4, max_len=7)
 ```
