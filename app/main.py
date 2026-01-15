@@ -12,7 +12,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from library.factory import GeneratorFactory
-from library.generator import PermutationIterator
 
 
 # === USTAWIENIA ===
@@ -58,6 +57,12 @@ class DistributedBruteForcer:
 
         self.target_hash = None
         self.hash_ready = threading.Event()
+
+        # --- NOWE ZMIENNE ---
+        self.current_batch = None      # Numer paczki, którą teraz liczę
+        self.abort_flag = False        # Sygnał: "Przestań liczyć!"
+        # --------------------
+
 
         self.proposed_password = None
         self.proposed_hash = None
@@ -249,6 +254,16 @@ class DistributedBruteForcer:
 
                 if msg.startswith("TASK_START:"):
                     b = int(msg.split(":", 1)[1])
+
+                    # SPRAWDZAMY CZY WYSTEPUJE KONFLIKT
+                    if self.current_batch is not None and self.current_batch == b:
+                        # JEST KONFLIKT -> SPRAWDZAMY KTO MA NIZSZE IP
+                        if ip < self.ip:
+                            print(f"[KONFLIKT] {ip} zabiera paczkę {b} (ma niższe IP). Odpuszczam.")
+                            self.abort_flag = True
+                        else:
+                            print(f"[KONFLIKT] {ip} próbował wziąć {b}, ale ja mam niższe IP. Ignoruję go.")
+
                     with self.lock:
                         self.assigned_batches[ip] = (b, time.time())
                     print(f"[INFO] {ip} → {b}")
@@ -303,11 +318,26 @@ class DistributedBruteForcer:
                 continue
 
             batch = self._next_batch()
+            
+            # zapisujemy aktualna paczke
+            self.current_batch = batch
+            self.abort_flag = False
+
             print(f"[TASK] Paczka {batch}")
             self._send_to_all(f"TASK_START:{batch}")
 
             start_idx = batch * TASK_BATCH_SIZE
             found = self._process_batch(start_idx)
+
+            # po zakończeniu pracy czyścimy aktualną paczkę
+            self.current_batch = None
+
+            # sprawdzamy cze przerwano przez konflikt (dwa komputery wziely tą samą paczke)
+            if found == "ABORTED":
+                with self.lock:
+                    self.assigned_batches.pop(self.ip, None)
+                # Wracamy na początek pętli po nową paczkę
+                continue
 
             if found:
                 self.global_stop = True
@@ -327,6 +357,8 @@ class DistributedBruteForcer:
         for pwd in batch_gen:
             if self.global_stop:
                 return None
+            if self.abort_flag:
+                return "ABORTED"
             if hashlib.sha1(pwd.encode()).hexdigest() == self.target_hash:
                 return pwd
         return None
