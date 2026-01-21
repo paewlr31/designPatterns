@@ -20,7 +20,7 @@ MULTICAST_PORT = 50001
 TASK_PORT = 50002
 PING_INTERVAL = 3
 SYNC_INTERVAL = 8
-TASK_BATCH_SIZE = 1000000
+TASK_BATCH_SIZE = 1_000_000
 TASK_TIMEOUT = 30
 SYNC_WAIT_TIMEOUT = 12
 
@@ -95,7 +95,8 @@ class DistributedBruteForcer:
             sys.exit(1)
 
         # === BIBLIOTEKA ===
-        self.generator = GeneratorFactory.default_bruteforce(min_len=4, max_len=7)
+        # self.generator = GeneratorFactory.default_bruteforce(min_len=4, max_len=7)
+        self.generator = GeneratorFactory.file_dictionary(file_path="Pwdb_top-10000000.txt", min_len=2, max_len=100)
         self.strategy = self.generator.strategy
 
         # === WĄTKI ===
