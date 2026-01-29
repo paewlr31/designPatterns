@@ -24,3 +24,13 @@ class GeneratorFactory:
             .with_length_range(min_len, max_len)
             .build()
         )
+    
+    @staticmethod
+    def file_dictionary(file_path: str, min_len: int = 4, max_len: int = 7) -> PasswordGenerator:
+        from .strategies import FileDictionaryStrategy
+        strategy = FileDictionaryStrategy(
+            file_path=file_path,
+            min_length=min_len,
+            max_length=max_len
+        )
+        return PasswordGenerator(strategy)
